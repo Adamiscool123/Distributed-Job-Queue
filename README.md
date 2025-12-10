@@ -1,10 +1,10 @@
-🚀 Distributed Job Queue System (DJQS)
+Distributed Job Queue System (DJQS)
 
 A low-latency, horizontally scalable, and pure C++ job distribution system.
 Designed for asynchronous task handling across multiple Workers — with full thread safety.
 
 <br>
-💡 Overview
+Overview
 
 The Distributed Job Queue System (DJQS) solves a critical distributed-systems challenge:
 
@@ -13,7 +13,7 @@ How do multiple Clients and Workers safely read/write the same queue at the same
 The project demonstrates modern C++ concurrency design, safe shared-resource access, socket communication, and scalable worker orchestration.
 
 <br>
-⚙️ Architecture & Data Flow
+Architecture & Data Flow
 
 DJQS follows the classic Client → Server → Worker flow.
 
@@ -24,21 +24,21 @@ Server — Stores & dispatches jobs
 Workers — Continuously pull & execute jobs
 
 <br>
-🧩 Components
+Components
 Component	Role	Technologies
 Server (Queue Boss)	Thread-safe job queue manager. Dispatches jobs to Workers.	Sockets, std::thread, std::mutex, std::queue
 Client (Request Maker)	Sends tasks to the Server and disconnects after ACK.	Sockets
 Worker (Processor)	Pulls and processes tasks using simulated delays.	Sockets, sleep()
 <br>
-🔒 Concurrency (The Real C++ Challenge)
+Concurrency (The Real C++ Challenge)
 
 The Server must prevent race conditions when multiple Workers try to pop from the queue.
 
-❗ Problem
+Problem
 
 Two Workers grabbing the first item at the same time → corrupted queue, crashes, undefined behavior.
 
-✅ Solution
+Solution
 
 Wrap every queue access inside a mutex lock.
 
@@ -69,7 +69,7 @@ g++ client.cpp -o client -std=c++17 -pthread
 g++ worker.cpp -o worker -std=c++17 -pthread
 
 <br>
-▶️ How to Run
+How to Run
 
 Open multiple terminals:
 
@@ -79,7 +79,7 @@ Terminal	Command	Purpose
 3	./worker	Worker B
 4	./client	Send tasks
 <br>
-📝 Sample Client Commands
+Sample Client Commands
 
 Use these inside the Client terminal:
 
