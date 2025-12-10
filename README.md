@@ -52,15 +52,6 @@ Wrap every queue access inside a **mutex** lock.
 ## C++ Example
 
 ```cpp
-void Server::dispatchJob() {
-    std::lock_guard<std::mutex> lock(queue_mutex_); // LOCK
-
-    if (!job_queue_.empty()) {
-        std::string job = job_queue_.front();
-        job_queue_.pop();
-        // Send job to Worker
-    }
-} // UNLOCK automatically happens here
 🛠️ Installation
 Prerequisites
 GCC/G++ with C++11+
