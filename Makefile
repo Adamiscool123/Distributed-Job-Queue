@@ -1,8 +1,8 @@
-all: main
+all: server
 
-main: main.cpp
-	g++ main.cpp -o main
-	./main
+main: server.cpp
+	g++ server.cpp -o server
+	./server
 
 clean:
-	rm -f main
+	rm -f server
