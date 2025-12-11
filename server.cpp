@@ -1,4 +1,5 @@
 #include <arpa/inet.h>
+#include <ctime>
 #include <iostream> // For I/O streams objects
 #include <mutex> // To ensure that only one thread can access a shared resource at a time
 #include <netinet/in.h>
@@ -33,44 +34,55 @@ std::queue<Job> job_queue;
 std::mutex queue_mutex;
 
 /// Send data to worker
-void send_to_worker(int worker_socket, Job job) {
+bool send_to_worker(int worker_socket, const Job &job) {
   // Message to send to worker
-  std::string message = "JOB" + std::to_string(job.id) + " " + job.type + " " +
-                        job.payload + " " + std::to_string(job.priority) + " " +
+  std::string message = "JOB " + std::to_string(job.id) + " " + job.type + " " +
+                        std::to_string(job.priority) + " " +
                         std::to_string(job.retries) + " " +
-                        std::to_string(job.deadline);
+                        std::to_string(job.deadline) + " " + job.payload;
 
   // Send message to worker
-  send(worker_socket, message.c_str(), message.length(), 0);
+  ssize_t sent = send(worker_socket, message.c_str(), message.length(), 0);
+  if (sent < 0) {
+    std::cout << "Failed to send job " << job.id << " to worker" << std::endl;
+    return false;
+  }
+  if (static_cast<size_t>(sent) != message.length()) {
+    std::cout << "Partial job send to worker for job " << job.id << std::endl;
+    return false;
+  }
+
+  return true;
 }
 
 void handle_worker(int worker_socket) {
   // Make while loop to keep checking for jobs
   while (true) {
-    // Lock the queue so no other thread can access it
-    queue_mutex.lock();
+    std::unique_lock<std::mutex> lock(queue_mutex);
 
     // Check if there are any jobs in the queue
-    if (!job_queue.empty()) {
-      // Get the job
-      Job job = job_queue.front();
-
-      // Remove the job from the queue
-      job_queue.pop();
-
-      // Unlock the queue
-      queue_mutex.unlock();
-
-      // Send the job to the worker
-      send_to_worker(worker_socket, job);
-    } else {
-      // Unlock the queue
-      queue_mutex.unlock();
-
+    if (job_queue.empty()) {
+      lock.unlock();
       // Wait for a job
       sleep(1);
+      continue;
+    }
+
+    // Get the job
+    Job job = job_queue.front();
+
+    // Remove the job from the queue
+    job_queue.pop();
+
+    lock.unlock();
+
+    // Send the job to the worker
+    if (!send_to_worker(worker_socket, job)) {
+      break;
     }
   }
+
+  close(worker_socket);
 }
 
 // Handle client connection
@@ -105,7 +117,7 @@ void handle_client(int clientSocket) {
     std::cout << "Message from client: " << message << std::endl;
 
     if (message.substr(0, 6) == "SUBMIT") {
-      if (message.substr(0, 23) == "SUBMIT TRANSCODE_VIDEO") {
+      if (message.rfind("SUBMIT TRANSCODE_VIDEO", 0) == 0) {
 
         std::string keyword = "--payload=";
 
@@ -115,62 +127,83 @@ void handle_client(int clientSocket) {
 
         std::string keyword3 = "--deadline=";
 
-        size_t payload = message.find(keyword);
+        size_t payload_pos = message.find(keyword);
+        size_t priority_pos = message.find(keyword1);
+        size_t retries_pos = message.find(keyword2);
+        size_t deadline_pos = message.find(keyword3);
 
-        size_t priority = message.find(keyword1);
-
-        size_t retries = message.find(keyword2);
-
-        size_t deadline = message.find(keyword3);
-
-        size_t start_of_next_text1;
-
-        size_t start_of_next_text2;
-
-        size_t start_of_next_text3;
-
-        if (retries != std::string::npos) {
-          start_of_next_text2 = retries + keyword2.length();
+        if (payload_pos == std::string::npos ||
+            priority_pos == std::string::npos ||
+            retries_pos == std::string::npos ||
+            deadline_pos == std::string::npos) {
+          std::cout << "Invalid SUBMIT format: missing fields" << std::endl;
+          continue;
         }
 
-        if (deadline != std::string::npos) {
-          start_of_next_text3 = deadline + keyword3.length();
+        auto next_field_pos = [&](size_t current) {
+          size_t next = std::string::npos;
+          for (size_t pos : {payload_pos, priority_pos, retries_pos, deadline_pos}) {
+            if (pos > current && pos < next) {
+              next = pos;
+            }
+          }
+          return next;
+        };
+
+        auto extract_value = [&](size_t start_pos, size_t key_len) {
+          size_t start = start_pos + key_len;
+          size_t end = next_field_pos(start_pos);
+          if (end == std::string::npos) {
+            end = message.size();
+          }
+          if (end < start) {
+            return std::string();
+          }
+          // Trim trailing space if present
+          while (end > start && message[end - 1] == ' ') {
+            --end;
+          }
+          return message.substr(start, end - start);
+        };
+
+        std::string payload_value = extract_value(payload_pos, keyword.length());
+        std::string priority_value =
+            extract_value(priority_pos, keyword1.length());
+        std::string retries_value = extract_value(retries_pos, keyword2.length());
+        std::string deadline_value =
+            extract_value(deadline_pos, keyword3.length());
+
+        if (payload_value.empty() || priority_value.empty() ||
+            retries_value.empty() || deadline_value.empty()) {
+          std::cout << "Invalid SUBMIT format: empty fields" << std::endl;
+          continue;
         }
 
-        if (priority != std::string::npos) {
-          // 2. Calculate the starting position of the text *after* the keyword
-          // pos is the start of "Age:", so we add the length of "Age:" to get
-          // past it
-          start_of_next_text1 = priority + keyword1.length();
-        }
-
-        if (payload != std::string::npos) {
-          start_of_next_text1 = payload + keyword.length();
-        }
-
-        // Create job object
         Job job;
-
-        // Assign values to job
-
-        job.id = counter_id;
         job.type = "TRANSCODE_VIDEO";
-        job.payload = message.substr(start_of_next_text1);
+        job.payload = payload_value;
 
-        // Stoi: String to Integer
-        job.priority = std::stoi(message.substr(start_of_next_text1));
-        job.retries = std::stoi(message.substr(start_of_next_text2));
-        job.deadline = std::stoi(message.substr(start_of_next_text3));
+        try {
+          job.priority = std::stoi(priority_value);
+          job.retries = std::stoi(retries_value);
+          job.deadline = std::stoi(deadline_value);
+        } catch (const std::exception &e) {
+          std::cout << "Invalid numeric field in SUBMIT: " << e.what()
+                    << std::endl;
+          continue;
+        }
 
-        job_queue.push(job);
+        {
+          std::lock_guard<std::mutex> lock(queue_mutex);
+          job.id = counter_id++;
+          job_queue.push(job);
+        }
 
         std::string response =
             "Server: Job " + std::to_string(job.id) +
             " submitted successfully (TRANSCODE_VIDEO, priority: 5)";
 
         std::cout << response << std::endl;
-
-        counter_id++;
       }
     } else if (message.substr(0, 10) == "JOB_STATUS") {
       std::cout << "Job status" << std::endl;
@@ -250,15 +283,28 @@ void server(int port) {
     }
 
     // Check if client or worker
-    char peek_buffer[100];
+    char peek_buffer[100] = {0};
 
-    // MSG_PEEK: Peeks at the data on the socket without removing it from the
-    // buffer
-    recv(newSocket, peek_buffer, sizeof(peek_buffer), MSG_PEEK);
+    ssize_t peeked =
+        recv(newSocket, peek_buffer, sizeof(peek_buffer) - 1, MSG_PEEK);
 
-    std::string msg(peek_buffer);
+    if (peeked <= 0) {
+      close(newSocket);
+      continue;
+    }
 
-    if (msg.find("WORKER") == 0) {
+    std::string msg(peek_buffer, static_cast<size_t>(peeked));
+
+    bool is_worker = (msg.find("Worker") == 0 || msg.find("WORKER") == 0);
+
+    // Consume the peeked banner so it doesn't remain in the socket buffer
+    ssize_t consumed = recv(newSocket, peek_buffer, static_cast<size_t>(peeked), 0);
+    if (consumed <= 0) {
+      close(newSocket);
+      continue;
+    }
+
+    if (is_worker) {
       // Worker
       std::thread(handle_worker, newSocket).detach();
     } else {

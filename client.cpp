@@ -24,8 +24,11 @@ void client(int port) {
   // Specifiy port - 8080
   serverAddress.sin_port = htons(port);
 
-  // Listen on all available network interfaces
-  serverAddress.sin_addr.s_addr = INADDR_ANY;
+  // Connect to localhost
+  if (inet_pton(AF_INET, "127.0.0.1", &serverAddress.sin_addr) <= 0) {
+    std::cout << "Invalid address" << std::endl;
+    return;
+  }
 
   // Connect client socket to server using its address
   int value = connect(clientSocket, (struct sockaddr *)&serverAddress,

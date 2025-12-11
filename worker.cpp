@@ -1,5 +1,7 @@
 #include <arpa/inet.h>
+#include <ctime>
 #include <cstring>
+#include <stdexcept>
 #include <iostream> // For I/O streams objects
 #include <mutex> // To ensure that only one thread can access a shared resource at a time
 #include <netinet/in.h>
@@ -52,36 +54,46 @@ struct Job {
 };
 
 // Receive job from server and assign values to Job object then return it
-Job receive_from_server(int socket) {
+bool receive_from_server(int socket, Job &job) {
   // Buffer to store the message
   char buffer[1000] = {0};
   // Get the message from the server
-  int bytes = recv(socket, buffer, sizeof(buffer) - 1, 0);
+  ssize_t bytes = recv(socket, buffer, sizeof(buffer) - 1, 0);
+
+  if (bytes <= 0) {
+    if (bytes == 0) {
+      std::cout << "Server closed connection" << std::endl;
+    } else {
+      std::cout << "Error receiving job from server" << std::endl;
+    }
+    return false;
+  }
 
   // Convert the message to a string
-  std::string message(buffer);
+  std::string message(buffer, static_cast<size_t>(bytes));
 
-  std::vector<std::string> parts = split(message, ' ');
+  std::istringstream iss(message);
+  std::string tag;
 
-  // Create Job objects
-  Job job;
+  if (!(iss >> tag >> job.id >> job.type >> job.priority >> job.retries >>
+        job.deadline)) {
+    std::cout << "Malformed job header: " << message << std::endl;
+    return false;
+  }
 
-  // Assign values to job
+  if (tag != "JOB") {
+    std::cout << "Unexpected message tag: " << tag << std::endl;
+    return false;
+  }
 
-  // Stoi: String to Integer
-  job.id = std::stoi(parts[1]);
+  std::string payload_rest;
+  std::getline(iss, payload_rest);
+  if (!payload_rest.empty() && payload_rest[0] == ' ') {
+    payload_rest.erase(0, 1);
+  }
+  job.payload = payload_rest;
 
-  job.type = parts[2];
-
-  job.payload = parts[3];
-
-  job.priority = std::stoi(parts[4]);
-
-  job.retries = std::stoi(parts[5]);
-
-  job.deadline = std::stoi(parts[6]);
-
-  return job;
+  return true;
 }
 
 void connection(int port) {
@@ -93,7 +105,10 @@ void connection(int port) {
 
   serverAddress.sin_family = AF_INET;
   serverAddress.sin_port = htons(port);
-  serverAddress.sin_addr.s_addr = INADDR_ANY;
+  if (inet_pton(AF_INET, "127.0.0.1", &serverAddress.sin_addr) <= 0) {
+    std::cout << "Invalid server address" << std::endl;
+    return;
+  }
 
   int value = connect(workerSocket, (struct sockaddr *)&serverAddress,
                       sizeof(serverAddress));
@@ -111,7 +126,11 @@ void connection(int port) {
 
   while (true) {
     // Get job received from server
-    Job job = receive_from_server(workerSocket);
+    Job job;
+    if (!receive_from_server(workerSocket, job)) {
+      std::cout << "Exiting worker loop due to receive error" << std::endl;
+      break;
+    }
 
     std::cout << "Registered as worker, waiting for jobs " << std::endl;
 
@@ -147,9 +166,15 @@ void connection(int port) {
 
       std::string message =
           "Job " + std::to_string(job.id) + " completed: " + job.payload;
-      send(workerSocket, message.c_str(), message.length(), 0);
+      ssize_t sent = send(workerSocket, message.c_str(), message.length(), 0);
+      if (sent < 0 || static_cast<size_t>(sent) != message.length()) {
+        std::cout << "Failed to send completion to server" << std::endl;
+        break;
+      }
     }
   }
+
+  close(workerSocket);
 }
 
 int main(void) {
