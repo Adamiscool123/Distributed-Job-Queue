@@ -111,12 +111,16 @@ void handle_client(int clientSocket) {
       break;
     }
 
+    // Convert buffer to string
     std::string message(buffer, bytesRead);
 
     // Print out message/data received from client
     std::cout << "Message from client: " << message << std::endl;
 
+    // Handle different client commands
+
     if (message.substr(0, 6) == "SUBMIT") {
+      // Check to see if message was found from index 0 - 6
       if (message.rfind("SUBMIT TRANSCODE_VIDEO", 0) == 0) {
 
         std::string keyword = "--payload=";
@@ -127,11 +131,15 @@ void handle_client(int clientSocket) {
 
         std::string keyword3 = "--deadline=";
 
+        // Find positions of keywords
         size_t payload_pos = message.find(keyword);
         size_t priority_pos = message.find(keyword1);
         size_t retries_pos = message.find(keyword2);
         size_t deadline_pos = message.find(keyword3);
 
+
+        // Validate positions
+        // Npos: not position
         if (payload_pos == std::string::npos ||
             priority_pos == std::string::npos ||
             retries_pos == std::string::npos ||
@@ -140,9 +148,18 @@ void handle_client(int clientSocket) {
           continue;
         }
 
+
+        // Lambda function to find where the whole instruction field e.g --payload=video is so in that example its o the ending
+        // Use & to capture local variables by reference
         auto next_field_pos = [&](size_t current) {
+          // Npos is infinity but it is a placeholder
           size_t next = std::string::npos;
           for (size_t pos : {payload_pos, priority_pos, retries_pos, deadline_pos}) {
+            // Checks to see if position of the 4 instructions is bigger than currect position and position is smaller than next
+            // Position
+            // So if current = payload_pos then it checks the other 3 positions to see which is the smallest one after payload_pos 
+            // Then returns it.
+            // If there is no next field it returns npos
             if (pos > current && pos < next) {
               next = pos;
             }
@@ -150,19 +167,30 @@ void handle_client(int clientSocket) {
           return next;
         };
 
+        // Lambda function to extract value between positions
         auto extract_value = [&](size_t start_pos, size_t key_len) {
+          
+          // Get start and end positions
           size_t start = start_pos + key_len;
           size_t end = next_field_pos(start_pos);
+          
+          // To see if there is no next field
           if (end == std::string::npos) {
             end = message.size();
           }
           if (end < start) {
             return std::string();
           }
-          // Trim trailing space if present
+          
+          // If end (the end position of the instruction) is bigger than start (the start of the instruction position)
+          // AND
+          // Message at end - 1 (the last character of the instruction) is a space
+          // Then decrement end by 1
+          // This is to remove any trailing spaces from the value
           while (end > start && message[end - 1] == ' ') {
             --end;
           }
+          // After finishing the while loop return the substring from start to end
           return message.substr(start, end - start);
         };
 
@@ -285,30 +313,42 @@ void server(int port) {
     // Check if client or worker
     char peek_buffer[100] = {0};
 
+    // Ssize_t can hold negative and positive values whereas size_t only holds positive values
+    // MSG_PEEK flag allows us to look at the incoming data without removing it from the queue
     ssize_t peeked =
         recv(newSocket, peek_buffer, sizeof(peek_buffer) - 1, MSG_PEEK);
 
+    // If error while peeking then close socket and continue
     if (peeked <= 0) {
       close(newSocket);
       continue;
     }
 
+    // Convert peeked data to string for easier handling
     std::string msg(peek_buffer, static_cast<size_t>(peeked));
 
+    // Check if it's a worker or client based on the banner
     bool is_worker = (msg.find("Worker") == 0 || msg.find("WORKER") == 0);
 
     // Consume the peeked banner so it doesn't remain in the socket buffer
     ssize_t consumed = recv(newSocket, peek_buffer, static_cast<size_t>(peeked), 0);
+
+    // If error while consuming then close socket and continue
     if (consumed <= 0) {
       close(newSocket);
       continue;
     }
 
+    // Check if it's a worker or client based on the banner
     if (is_worker) {
       // Worker
+      // Use threading to handle multiple workers
+      // Detach thread to allow it to run independently in the background
       std::thread(handle_worker, newSocket).detach();
     } else {
       // Client
+      // Use threading to handle multiple clients
+      // Detach thread to allow it to run independently in the background
       std::thread(handle_client, newSocket).detach();
     }
   }

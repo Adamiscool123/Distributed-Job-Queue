@@ -29,6 +29,7 @@ std::vector<std::string> split(const std::string &s, char delimiter) {
   // Keeps reading tokenStream putting each of them into the token until it hits
   // the delimiter (a space)
   while (std::getline(tokenStream, token, delimiter)) {
+    // Put in token to tokens vector
     tokens.push_back(token);
   }
   return tokens;
@@ -72,15 +73,19 @@ bool receive_from_server(int socket, Job &job) {
   // Convert the message to a string
   std::string message(buffer, static_cast<size_t>(bytes));
 
+  // Create input string stream to parse the message
   std::istringstream iss(message);
+  // Temporary variable to hold the tag
   std::string tag;
 
+  // Parse the message header and check for errors
   if (!(iss >> tag >> job.id >> job.type >> job.priority >> job.retries >>
         job.deadline)) {
     std::cout << "Malformed job header: " << message << std::endl;
     return false;
   }
 
+  //Check if tag is correct
   if (tag != "JOB") {
     std::cout << "Unexpected message tag: " << tag << std::endl;
     return false;
@@ -105,6 +110,8 @@ void connection(int port) {
 
   serverAddress.sin_family = AF_INET;
   serverAddress.sin_port = htons(port);
+
+  // Convert string IP to binary form
   if (inet_pton(AF_INET, "127.0.0.1", &serverAddress.sin_addr) <= 0) {
     std::cout << "Invalid server address" << std::endl;
     return;
