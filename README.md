@@ -61,9 +61,9 @@ make (optional)
 Compile Everything
 bash
 Copy code
-g++ server.cpp -o server -std=c++17 -pthread
-g++ client.cpp -o client -std=c++17 -pthread
-g++ worker.cpp -o worker -std=c++17 -pthread
+g++ server.cpp -o server 
+g++ client.cpp -o client 
+g++ worker.cpp -o worker 
 How to Run
 Open multiple terminals:
 
