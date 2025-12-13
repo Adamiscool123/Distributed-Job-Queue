@@ -30,7 +30,10 @@ struct Job {
   time_t deadline;
 };
 
+// Queue of Job objects
 std::queue<Job> job_queue;
+
+// Mutex for protecting access to the job queue
 std::mutex queue_mutex;
 
 /// Send data to worker
@@ -42,11 +45,17 @@ bool send_to_worker(int worker_socket, const Job &job) {
                         std::to_string(job.deadline) + " " + job.payload;
 
   // Send message to worker
+  // Ssize_t: Can be negative or positive
+  // Message.c_str(): Convert string to const char*
   ssize_t sent = send(worker_socket, message.c_str(), message.length(), 0);
+  
+  // Check for errors
   if (sent < 0) {
     std::cout << "Failed to send job " << job.id << " to worker" << std::endl;
     return false;
   }
+
+  // Check if entire message was sent
   if (static_cast<size_t>(sent) != message.length()) {
     std::cout << "Partial job send to worker for job " << job.id << std::endl;
     return false;
@@ -58,9 +67,10 @@ bool send_to_worker(int worker_socket, const Job &job) {
 void handle_worker(int worker_socket) {
   // Make while loop to keep checking for jobs
   while (true) {
+    // Lock the queue while accessing it
     std::unique_lock<std::mutex> lock(queue_mutex);
 
-    // Check if there are any jobs in the queue
+    // Check if there are any jobs in the queue and if empty unlock and wait
     if (job_queue.empty()) {
       lock.unlock();
       // Wait for a job
@@ -68,15 +78,16 @@ void handle_worker(int worker_socket) {
       continue;
     }
 
-    // Get the job
+    // Get the job - the one at the front of the queue
     Job job = job_queue.front();
 
     // Remove the job from the queue
     job_queue.pop();
 
+    // Unlock the queue
     lock.unlock();
 
-    // Send the job to the worker
+    // Send the job to the worker and check for errors
     if (!send_to_worker(worker_socket, job)) {
       break;
     }
@@ -194,6 +205,7 @@ void handle_client(int clientSocket) {
           return message.substr(start, end - start);
         };
 
+        // Extract values
         std::string payload_value = extract_value(payload_pos, keyword.length());
         std::string priority_value =
             extract_value(priority_pos, keyword1.length());
@@ -201,17 +213,20 @@ void handle_client(int clientSocket) {
         std::string deadline_value =
             extract_value(deadline_pos, keyword3.length());
 
+            // Validate extracted values
         if (payload_value.empty() || priority_value.empty() ||
             retries_value.empty() || deadline_value.empty()) {
           std::cout << "Invalid SUBMIT format: empty fields" << std::endl;
           continue;
         }
 
+        // Create job object and assign values
         Job job;
         job.type = "TRANSCODE_VIDEO";
         job.payload = payload_value;
 
         try {
+          // Stoi = string to integer
           job.priority = std::stoi(priority_value);
           job.retries = std::stoi(retries_value);
           job.deadline = std::stoi(deadline_value);
@@ -222,11 +237,17 @@ void handle_client(int clientSocket) {
         }
 
         {
+          // Lock the queue while adding job so no other thread can access it
           std::lock_guard<std::mutex> lock(queue_mutex);
+          
+          // Assign job ID
           job.id = counter_id++;
+          
+          // Add job to queue
           job_queue.push(job);
         }
 
+        // Show confirmation message
         std::string response =
             "Server: Job " + std::to_string(job.id) +
             " submitted successfully (TRANSCODE_VIDEO, priority: 5)";
@@ -278,8 +299,7 @@ void server(int port) {
   // Final step for configuring serverAddress: Tells OS which IP address the
   // server should listen to
 
-  // INADDR_ANY: Uses port 0.0.0.0 or in other words "Listen on all available
-  // network interfaces"
+  // INADDR_ANY: Uses port 0.0.0.0 or in other words "Listen on all available network interfaces" so no need to specify actual IP address
   serverAddress.sin_addr.s_addr = INADDR_ANY;
 
   // System call that assigns server address with server socket
