@@ -60,8 +60,32 @@ void client(int port) {
     const char *result_message = message.c_str();
 
     // Send message: clientsocket, message, length of message.
-    send(clientSocket, result_message, strlen(result_message), 0);
+    int value = send(clientSocket, result_message, strlen(result_message), 0);
+
+    if (value < 0) {
+      std::cout << "Send failed" << std::endl;
+      break;
+    }
+
+    char buffer[1000] = {0};
+
+    ssize_t bytes = recv(clientSocket, buffer, sizeof(buffer) - 1, 0);
+
+    if(bytes <=0){
+      if(bytes == 0){
+        std::cout << "Server closed connection" << std::endl;
+      }
+      else{
+        std::cout << "Error receiving from server" << std::endl;
+      }
+      break;
+    }
+
+    std::string completion_message(buffer, static_cast<size_t>(bytes));
+
+    std::cout << "Message from server: " << completion_message << std::endl;
   }
+  close(clientSocket);
 }
 
 int main(void) {

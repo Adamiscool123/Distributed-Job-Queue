@@ -28,6 +28,9 @@ struct Job {
 
   // How long it can max run for
   time_t deadline;
+
+  // So can access from send_to_worker function
+  int client_socket;
 };
 
 // Queue of Job objects
@@ -90,6 +93,35 @@ void handle_worker(int worker_socket) {
     // Send the job to the worker and check for errors
     if (!send_to_worker(worker_socket, job)) {
       break;
+    }
+    char buffer[1000] = {0};
+    
+    ssize_t bytes = recv(worker_socket, buffer, sizeof(buffer) - 1, 0);
+
+    if(bytes <= 0){
+      if(bytes == 0){
+        std::cout << "Worker closed connection" << std::endl;
+      }
+      else{
+        std::cout << "Error receiving completion from worker" << std::endl;
+      }
+      break;
+    }
+
+    // Static cast to convert ssize_t to size_t so can only hold positive values
+    std::string message(buffer, static_cast<size_t>(bytes));
+
+    if(message.find("Job " + std::to_string(job.id) + " completed:") == 0){
+      std::cout << "Message from worker: " << message << std::endl;
+
+      int value = send(job.client_socket, message.c_str(), message.length(), 0);
+
+      if(value < 0){
+        std::cout << "Failed to send job completion to client" << std::endl;
+      }
+      else{
+        std::cout << "Server: Sent job completion to client " << job.id << std::endl;
+      }
     }
   }
 
@@ -222,7 +254,11 @@ void handle_client(int clientSocket) {
 
         // Create job object and assign values
         Job job;
+        
+        job.client_socket = clientSocket;
+        
         job.type = "TRANSCODE_VIDEO";
+        
         job.payload = payload_value;
 
         try {
@@ -272,6 +308,15 @@ void handle_client(int clientSocket) {
       std::cout << "Metrics get" << std::endl;
     } else if (message.substr(0, 9) == "TRACE_JOB") {
       std::cout << "Trace job" << std::endl;
+    }
+    else{
+      std::cout << "Unknown command from client: " << message << std::endl;
+
+      int value = send(clientSocket, "Unknown command", 15, 0);
+
+      if(value < 0){
+        std::cout << "Failed to send unknown command message to client" << std::endl;
+      }
     }
   }
   // Close passed client socket
