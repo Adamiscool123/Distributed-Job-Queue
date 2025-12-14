@@ -22,9 +22,11 @@ void client(int port) {
   serverAddress.sin_family = AF_INET;
 
   // Specifiy port - 8080
+  // Htons: Host to Network Short - Takes in port number then converts from host byte order to network byte order
   serverAddress.sin_port = htons(port);
 
   // Connect to localhost
+  // Inet_pton: Convert the IP address from text to binary form so that it can be used by the router
   if (inet_pton(AF_INET, "127.0.0.1", &serverAddress.sin_addr) <= 0) {
     std::cout << "Invalid address" << std::endl;
     return;
@@ -69,8 +71,11 @@ void client(int port) {
 
     char buffer[1000] = {0};
 
+    // ssize_t can only hold positive or negative values whereas size_t only holds positive values
+    // Receive data from server
     ssize_t bytes = recv(clientSocket, buffer, sizeof(buffer) - 1, 0);
 
+    // Check for errors
     if(bytes <=0){
       if(bytes == 0){
         std::cout << "Server closed connection" << std::endl;
@@ -81,8 +86,10 @@ void client(int port) {
       break;
     }
 
+    // Turn to string
     std::string completion_message(buffer, static_cast<size_t>(bytes));
 
+    // Send message to client
     std::cout << "Message from server: " << completion_message << std::endl;
   }
   close(clientSocket);

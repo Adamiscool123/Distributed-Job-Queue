@@ -1,5 +1,6 @@
 #include <arpa/inet.h>
 #include <ctime>
+#include <cstring>
 #include <iostream> // For I/O streams objects
 #include <mutex> // To ensure that only one thread can access a shared resource at a time
 #include <netinet/in.h>
@@ -8,11 +9,41 @@
 #include <sys/socket.h> // For sockets
 #include <thread>       // For multitasking/multithreading
 #include <unistd.h>     // Sleep function
+#include <sstream>
 
 int counter_id = 0;
 
+std::string checker;
+
+int job_id;
+
+// Split string into vector of strings
+std::vector<std::string> split(const std::string &s, char delimiter) {
+  // Make vector of strings
+  std::vector<std::string> tokens;
+
+  // Make string to store each token
+  std::string token;
+
+  // Allows you to take out parts of the string
+  // Wraps the message in a input string stream
+  std::istringstream tokenStream(s);
+
+  // Get each token
+
+  // Keeps reading tokenStream putting each of them into the token until it hits
+  // the delimiter (a space)
+  while (std::getline(tokenStream, token, delimiter)) {
+    // Put in token to tokens vector
+    tokens.push_back(token);
+  }
+  return tokens;
+}
+
 struct Job {
   int id;
+
+  std::string status;
 
   // Job type
   std::string type;
@@ -40,7 +71,7 @@ std::queue<Job> job_queue;
 std::mutex queue_mutex;
 
 /// Send data to worker
-bool send_to_worker(int worker_socket, const Job &job) {
+bool send_to_worker_submit(int worker_socket, const Job &job) {
   // Message to send to worker
   std::string message = "JOB " + std::to_string(job.id) + " " + job.type + " " +
                         std::to_string(job.priority) + " " +
@@ -67,60 +98,148 @@ bool send_to_worker(int worker_socket, const Job &job) {
   return true;
 }
 
+bool send_to_worker_status(int worker_socket, int id) {
+  // Message to send to worker
+  std::string message = "JOB_STATUS " + std::to_string(id);
+
+  // Send message to worker
+  // Ssize_t: Can be negative or positive
+  ssize_t sent = send(worker_socket, message.c_str(), message.length(), 0);
+  
+  // Check for errors
+  if (sent < 0) {
+    std::cout << "Failed to send job status request for job " << id << " to worker" << std::endl;
+    return false;
+  }
+
+  // Check if entire message was sent
+  if (static_cast<size_t>(sent) != message.length()) {
+    std::cout << "Partial job status request send to worker for job " << id << std::endl;
+    return false;
+  }
+
+  return true;
+}
+
 void handle_worker(int worker_socket) {
   // Make while loop to keep checking for jobs
   while (true) {
-    // Lock the queue while accessing it
-    std::unique_lock<std::mutex> lock(queue_mutex);
+    Job job;
+    if(checker == "SUBMIT"){
+      // Lock the queue while accessing it
+      std::unique_lock<std::mutex> lock(queue_mutex);
 
-    // Check if there are any jobs in the queue and if empty unlock and wait
-    if (job_queue.empty()) {
+      // Check if there are any jobs in the queue and if empty unlock and wait
+      if (job_queue.empty()) {
+        lock.unlock();
+        // Wait for a job
+        sleep(1);
+        continue;
+      }
+
+      // Get the job - the one at the front of the queue
+      job = job_queue.front();
+
+      // Remove the job from the queue
+      job_queue.pop();
+
+      // Unlock the queue
       lock.unlock();
-      // Wait for a job
-      sleep(1);
-      continue;
-    }
 
-    // Get the job - the one at the front of the queue
-    Job job = job_queue.front();
-
-    // Remove the job from the queue
-    job_queue.pop();
-
-    // Unlock the queue
-    lock.unlock();
-
-    // Send the job to the worker and check for errors
-    if (!send_to_worker(worker_socket, job)) {
-      break;
-    }
-    char buffer[1000] = {0};
-    
-    ssize_t bytes = recv(worker_socket, buffer, sizeof(buffer) - 1, 0);
-
-    if(bytes <= 0){
-      if(bytes == 0){
-        std::cout << "Worker closed connection" << std::endl;
+      // Send the job to the worker and check for errors
+      if (!send_to_worker_submit(worker_socket, job)) {
+        break;
       }
-      else{
-        std::cout << "Error receiving completion from worker" << std::endl;
+      
+      char buffer[1000] = {0};
+      
+      ssize_t bytes = recv(worker_socket, buffer, sizeof(buffer) - 1, 0);
+
+      if(bytes <= 0){
+        if(bytes == 0){
+          std::cout << "Worker closed connection" << std::endl;
+        }
+        else{
+          std::cout << "Error receiving completion from worker" << std::endl;
+        }
+        break;
       }
-      break;
+
+      // Static cast to convert ssize_t to size_t so can only hold positive values
+      std::string message(buffer, static_cast<size_t>(bytes));
+
+      if(message.find("Job " + std::to_string(job.id) + " completed:") == 0){
+        std::cout << "Message from worker: " << message << std::endl;
+
+        int value = send(job.client_socket, message.c_str(), message.length(), 0);
+
+        if(value < 0){
+          std::cout << "Failed to send job completion to client" << std::endl;
+        }
+        else{
+          std::cout << "Server: Sent job completion to client " << job.id << std::endl;
+        }
+      }
     }
+    else if(checker == "JOB_STATUS"){
+      int id = job_id;
 
-    // Static cast to convert ssize_t to size_t so can only hold positive values
-    std::string message(buffer, static_cast<size_t>(bytes));
-
-    if(message.find("Job " + std::to_string(job.id) + " completed:") == 0){
-      std::cout << "Message from worker: " << message << std::endl;
-
-      int value = send(job.client_socket, message.c_str(), message.length(), 0);
-
-      if(value < 0){
-        std::cout << "Failed to send job completion to client" << std::endl;
+      if(!send_to_worker_status(worker_socket, id)){
+        break;
       }
-      else{
-        std::cout << "Server: Sent job completion to client " << job.id << std::endl;
+
+      checker = "";
+
+      char buffer[1000] = {0};
+
+      ssize_t bytes = recv(worker_socket, buffer, strlen(buffer)-1, 0);
+
+      if(bytes <= 0){
+        if(bytes == 0){
+          std::cout << "Worker closed connection" << std::endl;
+        }
+        else{
+          std::cout << "Error receiving completion from worker" << std::endl;
+        }
+        break;        
+      }
+
+      // Capture worker message with job id and status
+      std::string msg(buffer, static_cast<size_t>(bytes));
+
+      std::cout << "Message from worker: " << msg << std::endl;
+      
+      // Get completion message
+
+      char buffer2[1000] = {0};
+
+      ssize_t bytes2 = recv(worker_socket, buffer2, strlen(buffer2)-1, 0);
+
+      if(bytes2 <= 0){
+        if(bytes == 0){
+          std::cout << "Worker closed connection" << std::endl;
+        }
+        else{
+          std::cout << "Error receiving completion from worker" << std::endl;
+        }
+        break;        
+      }
+
+      std::string msg2(buffer2, static_cast<size_t>(bytes2));
+
+      std::cout << "Server: " << msg2 << std::endl;
+
+      // Send to client
+      int value = send(job.client_socket, msg.c_str(), msg.length(), 0);
+
+      if(value <= 0){
+        if(bytes == 0){
+          std::cout << "Client closed connection" << std::endl;
+        }
+        else{
+          std::cout << "Error sending message to Client" << std::endl;
+        }
+        break;         
       }
     }
   }
@@ -162,9 +281,13 @@ void handle_client(int clientSocket) {
 
     // Handle different client commands
 
+    std::vector<std::string> parts = split(message, ' ');
+
     if (message.substr(0, 6) == "SUBMIT") {
       // Check to see if message was found from index 0 - 6
-      if (message.rfind("SUBMIT TRANSCODE_VIDEO", 0) == 0) {
+      if (parts[0] == "SUBMIT" && parts[1] == "TRANSCODE_VIDEO") {
+
+        checker = "SUBMIT";
 
         std::string keyword = "--payload=";
 
@@ -291,7 +414,9 @@ void handle_client(int clientSocket) {
         std::cout << response << std::endl;
       }
     } else if (message.substr(0, 10) == "JOB_STATUS") {
-      std::cout << "Job status" << std::endl;
+      checker = "JOB_STATUS";
+
+      job_id = std::stoi(parts[1]);
     } else if (message.substr(0, 10) == "JOB_CANCEL") {
       std::cout << "Job cancel" << std::endl;
     } else if (message.substr(0, 12) == "WORKER_DRAIN") {
@@ -337,14 +462,14 @@ void server(int port) {
   // Assign protocol to IPv4
   serverAddress.sin_family = AF_INET;
 
-  // htons = Host to Netzork Short: Takes in port number and converts it to
-  // standardized network format.
+  // htons = Host to Network Short: Takes in port number and converts it to standardized network format so router can understand
   serverAddress.sin_port = htons(port);
 
   // Final step for configuring serverAddress: Tells OS which IP address the
   // server should listen to
 
   // INADDR_ANY: Uses port 0.0.0.0 or in other words "Listen on all available network interfaces" so no need to specify actual IP address
+  // Basically can take in connections from any IP address
   serverAddress.sin_addr.s_addr = INADDR_ANY;
 
   // System call that assigns server address with server socket
@@ -357,8 +482,7 @@ void server(int port) {
     return;
   }
 
-  // Listen to the socket: 5 is the queue for amount of connections waiting to
-  // be accepted
+  // Listen to the socket: 5 is the queue for amount of connections waiting to be accepted
   listen(serverSocket, 5);
 
   std::cout << "Server Listening on port " << port << std::endl;

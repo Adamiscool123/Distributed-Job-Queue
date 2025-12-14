@@ -39,6 +39,8 @@ std::vector<std::string> split(const std::string &s, char delimiter) {
 struct Job {
   int id;
 
+  std::string status = "PENDING";
+
   // Job type
   std::string type;
 
@@ -55,8 +57,10 @@ struct Job {
   time_t deadline;
 };
 
+std::vector<Job> jobs_list;
+
 // Receive job from server and assign values to Job object then return it
-bool receive_from_server(int socket, Job &job) {
+bool receive_from_server(int socket, Job &job, std::vector<std::string> &parts, std::string &type) {
   // Buffer to store the message
   char buffer[1000] = {0};
   // Get the message from the server
@@ -72,34 +76,51 @@ bool receive_from_server(int socket, Job &job) {
   }
 
   // Convert the message to a string
+  // Static_cast to convert ssize_t to size_t so can only hold positive values
   std::string message(buffer, static_cast<size_t>(bytes));
 
-  // Create input string stream to parse the message
-  std::istringstream iss(message);
-  // Temporary variable to hold the tag
-  std::string tag;
+  parts = split(message, ' ');
 
-  // Parse the message header and check for errors
-  if (!(iss >> tag >> job.id >> job.type >> job.priority >> job.retries >>
-        job.deadline)) {
-    std::cout << "Malformed job header: " << message << std::endl;
-    return false;
+  // Use != std::string::npos because if the result is 0 for message.find then the if statement would think it's false
+
+  if(message.find("JOB") != std::string::npos){
+    if(message.find("TRANSCODE_VIDEO") != std::string::npos){
+      // Create input string stream to parse the message
+      std::istringstream iss(message);
+      // Temporary variable to hold the tag
+      std::string tag;
+
+      // Parse the message header and check for errors
+      if (!(iss >> tag >> job.id >> job.type >> job.priority >> job.retries >>
+            job.deadline)) {
+        std::cout << "Malformed job header: " << message << std::endl;
+        return false;
+      }
+
+      //Check if tag is correct
+      if (tag != "JOB") {
+        std::cout << "Unexpected message tag: " << tag << std::endl;
+        return false;
+      }
+
+      std::string payload_rest;
+      std::getline(iss, payload_rest);
+      if (!payload_rest.empty() && payload_rest[0] == ' ') {
+        payload_rest.erase(0, 1);
+      }
+      job.payload = payload_rest;
+
+      type = "SUBMIT";
+
+      return true;      
+    }
   }
+  if(message.find("JOB_STATUS") != std::string::npos){
+    type = "JOB_STATUS";
 
-  //Check if tag is correct
-  if (tag != "JOB") {
-    std::cout << "Unexpected message tag: " << tag << std::endl;
-    return false;
+    return true;
   }
-
-  std::string payload_rest;
-  std::getline(iss, payload_rest);
-  if (!payload_rest.empty() && payload_rest[0] == ' ') {
-    payload_rest.erase(0, 1);
-  }
-  job.payload = payload_rest;
-
-  return true;
+  return false;
 }
 
 void connection(int port) {
@@ -115,6 +136,7 @@ void connection(int port) {
   serverAddress.sin_family = AF_INET;
   
   // Specify port
+  // Use htons to make port from host byte order to network byte order
   serverAddress.sin_port = htons(port);
 
   // Convert string IP to binary form so that it can be used - inet_pton(AF_INET, "127.0.0.1", &serverAddress.sin_addr)
@@ -141,58 +163,111 @@ void connection(int port) {
 
   send(workerSocket, identity, strlen(identity), 0);
 
+  std::cout << "Registered as worker, waiting for jobs " << std::endl;
+
+  std::vector<std::string> parts;
+
+  std::string type;
+
   while (true) {
-    // Get job received from server and check for errors
     Job job;
-    
+
     // Wait to receive job from server
-    if (!receive_from_server(workerSocket, job)) {
+    if (!receive_from_server(workerSocket, job, parts, type)) {
       std::cout << "Exiting worker loop due to receive error" << std::endl;
+      job.status = "FAILED";
       break;
     }
+    if(type == "SUBMIT"){
+      // Get job received from server and check for errors
 
-    // Start processing job
-    std::cout << "Registered as worker, waiting for jobs " << std::endl;
+      job.status = "PENDING";
+      
+      // Start processing job
 
-    std::cout << "Received job " << job.id << ": " << job.type << " "
-              << job.payload << std::endl;
+      std::cout << "Received job " << job.id << ": " << job.type << " "
+                << job.payload << std::endl;
 
-    if (job.type == "TRANSCODE_VIDEO") {
+      if (job.type == "TRANSCODE_VIDEO") {
 
-      std::cout << "Processing video: " << job.payload << std::endl;
+        std::cout << "Processing video: " << job.payload << std::endl;
 
-      std::cout << "Step 1/5: Demuxing video stream..." << std::endl;
+        job.status = "IN_PROGRESS";
 
-      sleep(2);
+        std::cout << "Step 1/5: Demuxing video stream..." << std::endl;
 
-      std::cout << "Step 2/5: Decoding 4K frames..." << std::endl;
+        sleep(2);
 
-      sleep(1);
+        std::cout << "Step 2/5: Decoding 4K frames..." << std::endl;
 
-      std::cout << "Step 3/5: Scaling to 1080p..." << std::endl;
+        sleep(1);
 
-      sleep(1);
+        std::cout << "Step 3/5: Scaling to 1080p..." << std::endl;
 
-      std::cout << "Step 4/5: Encoding with H.265..." << std::endl;
+        sleep(1);
 
-      sleep(3);
+        std::cout << "Step 4/5: Encoding with H.265..." << std::endl;
 
-      std::cout << "Step 5/5: Muxing final file..." << std::endl;
+        sleep(3);
 
-      sleep(2);
+        std::cout << "Step 5/5: Muxing final file..." << std::endl;
 
-      std::cout << "Job " << job.id << " completed: " << job.payload
-                << std::endl;
+        sleep(2);
 
-      // Send completion message back to server
+        job.status = "COMPLETED";
+
+        std::cout << "Job " << job.id << " completed: " << job.payload
+                  << std::endl;
+
+        // Send completion message back to server
+        std::string message =
+            "Job " + std::to_string(job.id) + " completed: " + job.payload;
+        
+        // Send message to server
+        ssize_t sent = send(workerSocket, message.c_str(), message.length(), 0);
+        
+        // Check for errors like if full length of message was sent
+        if (sent < 0 || static_cast<size_t>(sent) != message.length()) {
+          std::cout << "Failed to send completion to server" << std::endl;
+          break;
+        }
+      }
+      jobs_list.push_back(job);
+    }
+    else if(type == "JOB_STATUS"){
+      // Handle JOB_STATUS request
+      std::cout << "Received JOB_STATUS request from server" << std::endl;
+
+      sleep(1); // Simulate processing time
+
+      std::cout << "Handling JOB_STATUS request" << std::endl;
+
+      sleep(2); // Simulate processing time
+
+      for(int i = 0; i < jobs_list.size(); i++){
+        if(jobs_list[i].id == std::stoi(parts[1])){
+          std::cout << "Found job ID: " << jobs_list[i].id << " with status: " << jobs_list[i].status << std::endl;
+
+          std::string status_message = "Job " + std::to_string(jobs_list[i].id) + " status: " + jobs_list[i].status;
+          
+          // Send status message back to server
+          ssize_t sent = send(workerSocket, status_message.c_str(), status_message.length(), 0);
+          
+          // Check for errors
+          if (sent < 0 || static_cast<size_t>(sent) != status_message.length()) {
+            std::cout << "Failed to send job status to server" << std::endl;
+            break;
+          }
+          break;
+        }
+      }
       std::string message =
-          "Job " + std::to_string(job.id) + " completed: " + job.payload;
+          "Job " + std::to_string(job.id) + " completed";
       
       // Send message to server
-      ssize_t sent = send(workerSocket, message.c_str(), message.length(), 0);
-      
-      // Check for errors like if full length of message was sent
-      if (sent < 0 || static_cast<size_t>(sent) != message.length()) {
+      ssize_t final_message = send(workerSocket, message.c_str(), message.length(), 0);
+
+      if (final_message < 0 || static_cast<size_t>(final_message) != message.length()) {
         std::cout << "Failed to send completion to server" << std::endl;
         break;
       }
