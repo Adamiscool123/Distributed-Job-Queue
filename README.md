@@ -5,7 +5,7 @@ Designed for asynchronous task handling across multiple Workers — with full th
 
 ---
 
-## Overview
+## 📖 Overview
 
 The Distributed Job Queue System (DJQS) solves a critical distributed-systems challenge:
 
@@ -15,9 +15,15 @@ The project demonstrates modern C++ concurrency design, safe shared-resource acc
 
 ---
 
-## Architecture & Data Flow
+## 🏗️ Architecture
 
 DJQS follows the classic **Client → Server → Worker** flow.
+
+```
+┌─────────┐    ┌─────────┐    ┌─────────┐
+│ Client  │ →  │ Server  │ →  │ Worker  │
+└─────────┘    └─────────┘    └─────────┘
+```
 
 - **Client** — Sends jobs  
 - **Server** — Stores & dispatches jobs  
@@ -25,50 +31,101 @@ DJQS follows the classic **Client → Server → Worker** flow.
 
 ---
 
-## Components
+## 📦 Components
 
-| Component            | Role                                                  | Technologies                                  |
-|----------------------|-------------------------------------------------------|-----------------------------------------------|
-| **Server (Queue Boss)**   | Thread-safe job queue manager. Dispatches jobs to Workers. | Sockets, `std::thread`, `std::mutex`, `std::queue` |
-| **Client (Request Maker)** | Sends tasks to the Server and disconnects after ACK.        | Sockets                                       |
-| **Worker (Processor)**     | Pulls and processes tasks using simulated delays.           | Sockets, `sleep()`                            |
-
----
-
-## Concurrency (The Real C++ Challenge)
-
-The Server must prevent race conditions when multiple Workers try to pop from the queue.
-
-### Problem
-
-Two Workers grabbing the first item at the same time → **corrupted queue**, **crashes**, **undefined behavior**.
-
-### Solution
-
-Wrap every queue access inside a **mutex** lock.
+| Component | Role | Technologies Used |
+|-----------|------|-------------------|
+| **Server** | Thread-safe job queue manager. Dispatches jobs to Workers. | Sockets, `std::thread`, `std::mutex`, `std::queue` |
+| **Client** | Sends tasks to the Server and disconnects after ACK. | Sockets |
+| **Worker** | Pulls and processes tasks using simulated delays. | Sockets, `sleep()` |
 
 ---
 
-## How to run code
+## 🔐 Concurrency Solution
 
-```cpp
-🛠️ Installation
-Prerequisites
-GCC/G++ with C++11+
+**Problem:** Two Workers grabbing the first item at the same time → corrupted queue, crashes, undefined behavior.
 
-make (optional)
+**Solution:** Wrap every queue access inside a **mutex** lock.
 
-Compile Everything
-bash
-Copy code
+---
+
+## 🚀 Quick Start
+
+### Prerequisites
+- GCC/G++ with C++11+
+- `make` (optional)
+
+### Compile Everything
+```bash
 g++ server.cpp -o server 
 g++ client.cpp -o client 
 g++ worker.cpp -o worker 
-How to Run
+```
+
+### Run the System
 Open multiple terminals:
 
-Terminal	Command	Purpose
-1	./server	Start the Server
-2	./worker	Worker A
-3	./worker	Worker B
-4	./client	Send tasks
+| Terminal | Command | Purpose |
+|----------|---------|---------|
+| 1 | `./server` | Start the Server |
+| 2 | `./worker` | Worker A |
+| 3 | `./worker` | Worker B |
+| 4 | `./client` | Send tasks |
+
+---
+
+## 📋 Client Commands
+
+### Command Arguments
+
+| Argument | Description |
+|----------|-------------|
+| `--payload=` | The file you want to submit as data |
+| `--priority=` | Job importance (0 = most important, 10 = least important) |
+| `--retries=` | Number of retry attempts if job fails |
+| `--deadline=` | Maximum time worker should take to complete job |
+
+### Available Commands
+
+#### Submit Commands
+Convert video file (payload) to readable format for computers:
+```bash
+SUBMIT TRANSCODE_VIDEO --payload=video.mp4 --priority=2 --retries=3 --deadline=300
+```
+
+#### Monitoring & Control Commands
+Get job status ("PENDING", "PROCESSING", "COMPLETED", "FAILED"):
+```bash
+JOB_STATUS <job_id>
+```
+
+Show system health:
+```bash
+METRICS_GET
+```
+
+Close client connection:
+```bash
+SHUTDOWN
+```
+
+## ✨ Features
+- ✅ Thread-safe job queue
+- ✅ Priority-based scheduling
+- ✅ Automatic retry mechanism
+- ✅ Deadline monitoring
+- ✅ Multi-worker support
+- ✅ Real-time job tracking
+
+---
+
+## 📚 Learning Points
+- Distributed systems architecture
+- C++ concurrency patterns
+- Socket programming
+- Race condition prevention
+- Job scheduling algorithms
+
+---
+
+*Note: This is a simulation demonstrating distributed systems concepts on a single machine.*
