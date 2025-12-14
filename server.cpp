@@ -17,6 +17,8 @@ std::string checker;
 
 int job_id;
 
+int job_status_client_socket = -1;
+
 // Split string into vector of strings
 std::vector<std::string> split(const std::string &s, char delimiter) {
   // Make vector of strings
@@ -192,7 +194,7 @@ void handle_worker(int worker_socket) {
 
       char buffer[1000] = {0};
 
-      ssize_t bytes = recv(worker_socket, buffer, strlen(buffer)-1, 0);
+      ssize_t bytes = recv(worker_socket, buffer, sizeof(buffer) - 1, 0);
 
       if(bytes <= 0){
         if(bytes == 0){
@@ -209,11 +211,30 @@ void handle_worker(int worker_socket) {
 
       std::cout << "Message from worker: " << msg << std::endl;
       
+      int target_socket = job_status_client_socket;
+      if (target_socket > 0) {
+        int value = send(target_socket, msg.c_str(), msg.length(), 0);
+
+        if(value <= 0){
+          if(bytes == 0){
+            std::cout << "Client closed connection" << std::endl;
+          }
+          else{
+            std::cout << "Error sending message to Client" << std::endl;
+          }
+          break;         
+        }
+      }
+
+      if (msg.rfind("ERROR", 0) == 0) {
+        continue;
+      }
+
       // Get completion message
 
       char buffer2[1000] = {0};
 
-      ssize_t bytes2 = recv(worker_socket, buffer2, strlen(buffer2)-1, 0);
+      ssize_t bytes2 = recv(worker_socket, buffer2, sizeof(buffer2) - 1, 0);
 
       if(bytes2 <= 0){
         if(bytes == 0){
@@ -228,19 +249,6 @@ void handle_worker(int worker_socket) {
       std::string msg2(buffer2, static_cast<size_t>(bytes2));
 
       std::cout << "Server: " << msg2 << std::endl;
-
-      // Send to client
-      int value = send(job.client_socket, msg.c_str(), msg.length(), 0);
-
-      if(value <= 0){
-        if(bytes == 0){
-          std::cout << "Client closed connection" << std::endl;
-        }
-        else{
-          std::cout << "Error sending message to Client" << std::endl;
-        }
-        break;         
-      }
     }
   }
 
@@ -413,26 +421,21 @@ void handle_client(int clientSocket) {
 
         std::cout << response << std::endl;
       }
-    } else if (message.substr(0, 10) == "JOB_STATUS") {
+      else{
+        std::cout << "Unknown job type from client: " << parts[1] << std::endl;
+
+        int value = send(clientSocket, "Unknown command", 15, 0);
+
+        if(value < 0){
+          std::cout << "Failed to send unknown command message to client" << std::endl;
+        }
+      }
+    } 
+    else if (message.substr(0, 10) == "JOB_STATUS") {
       checker = "JOB_STATUS";
 
       job_id = std::stoi(parts[1]);
-    } else if (message.substr(0, 10) == "JOB_CANCEL") {
-      std::cout << "Job cancel" << std::endl;
-    } else if (message.substr(0, 12) == "WORKER_DRAIN") {
-      std::cout << "Worker drain" << std::endl;
-    } else if (message.substr(0, 12) == "WORKER_SCALE") {
-      std::cout << "Worker scale" << std::endl;
-    } else if (message.substr(0, 15) == "QUEUE_REBALANCE") {
-      std::cout << "Queue rebalance" << std::endl;
-    } else if (message.substr(0, 11) == "QUEUE_PAUSE") {
-      std::cout << "Queue pause" << std::endl;
-    } else if (message.substr(0, 12) == "QUEUE_RESUME") {
-      std::cout << "Queue resume" << std::endl;
-    } else if (message.substr(0, 11) == "METRICS_GET") {
-      std::cout << "Metrics get" << std::endl;
-    } else if (message.substr(0, 9) == "TRACE_JOB") {
-      std::cout << "Trace job" << std::endl;
+      job_status_client_socket = clientSocket;
     }
     else{
       std::cout << "Unknown command from client: " << message << std::endl;

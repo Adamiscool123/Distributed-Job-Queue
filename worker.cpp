@@ -244,8 +244,12 @@ void connection(int port) {
 
       sleep(2); // Simulate processing time
 
+      bool found = false;
+
       for(int i = 0; i < jobs_list.size(); i++){
         if(jobs_list[i].id == std::stoi(parts[1])){
+          found = true;
+
           std::cout << "Found job ID: " << jobs_list[i].id << " with status: " << jobs_list[i].status << std::endl;
 
           std::string status_message = "Job " + std::to_string(jobs_list[i].id) + " status: " + jobs_list[i].status;
@@ -261,6 +265,22 @@ void connection(int port) {
           break;
         }
       }
+
+      if(!found){
+        std::cout << "Job ID: " << parts[1] << " not found" << std::endl;
+
+        std::string message = "Error Job " + parts[1] + " not found";
+
+        // Send not found message back to server
+        ssize_t sent = send(workerSocket, message.c_str(), message.length(), 0);
+
+        if (sent < 0 || static_cast<size_t>(sent) != message.length()) {
+          std::cout << "Failed to send job not found message to server" << std::endl;
+          break;
+        }
+        continue;
+      }
+
       std::string message =
           "Job " + std::to_string(job.id) + " completed";
       
