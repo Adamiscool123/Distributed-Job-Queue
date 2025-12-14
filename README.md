@@ -72,13 +72,3 @@ Terminal	Command	Purpose
 2	./worker	Worker A
 3	./worker	Worker B
 4	./client	Send tasks
-
-Sample Client Commands
-Use these inside the Client terminal:
-
-text
-Copy code
-TASK: CALCULATE_FINANCE: 5s_delay
-TASK: CLEANUP_LOGS: 2s_delay
-TASK: SEND_NOTIFICATION: 1s_delay
-Workers will log the job they receive and sleep() to simulate real processing time.
