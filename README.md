@@ -49,7 +49,7 @@ Wrap every queue access inside a **mutex** lock.
 
 ---
 
-## C++ Example
+## How to run code
 
 ```cpp
 🛠️ Installation
