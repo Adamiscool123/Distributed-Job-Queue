@@ -13,7 +13,6 @@
 #include <unistd.h>     // Sleep function
 
 // Need to remove
-std::string checker;
 
 int job_id;
 
@@ -62,6 +61,8 @@ struct Job {
 
   // So can access from send_to_worker function
   int client_socket;
+
+  std::string checker;
 };
 
 int counter_id = 0;
@@ -147,22 +148,22 @@ void handle_worker(int worker_socket) {
   while (true) {
     Job job;
 
-    if (checker == "SUBMIT") {
+    // Lock the queue while accessing it
+    std::unique_lock<std::mutex> lock(queue_mutex);
 
-      // Lock the queue while accessing it
-      std::unique_lock<std::mutex> lock(queue_mutex);
+    // Check if there are any jobs in the queue and if empty unlock and wait
+    if (job_queue.empty()) {
+      lock.unlock();
+      // Wait for a job
+      sleep(1);
+      continue;
+    }
 
-      // Check if there are any jobs in the queue and if empty unlock and wait
-      if (job_queue.empty()) {
-        lock.unlock();
-        // Wait for a job
-        sleep(1);
-        continue;
-      }
+    // Get the job - the one at the front of the queue
 
-      // Get the job - the one at the front of the queue
+    job = job_queue.front();
 
-      job = job_queue.front();
+    if (job.checker == "SUBMIT") {
 
       // Remove the job from the queue
       job_queue.pop();
@@ -205,115 +206,124 @@ void handle_worker(int worker_socket) {
                     << std::endl;
         }
       }
-    } else if (checker == "JOB_STATUS") {
+    } else {
 
-      int id = job_id;
+      job_queue.pop();
 
-      if (!send_to_worker_status(worker_socket, id)) {
-        break;
-      }
+      lock.unlock();
 
-      checker = "";
+      if (job.checker == "JOB_STATUS") {
 
-      char buffer[1000] = {0};
+        int id = job_id;
 
-      ssize_t bytes = recv(worker_socket, buffer, sizeof(buffer) - 1, 0);
-
-      if (bytes <= 0) {
-        if (bytes == 0) {
-          std::cout << "Worker closed connection" << std::endl;
-        } else {
-          std::cout << "Error receiving completion from worker" << std::endl;
+        if (!send_to_worker_status(worker_socket, id)) {
+          break;
         }
-        break;
-      }
 
-      // Capture worker message with job id and status
-      std::string msg(buffer, static_cast<size_t>(bytes));
+        job.checker = "";
 
-      std::cout << "Message from worker: " << msg << std::endl;
+        char buffer[1000] = {0};
 
-      int target_socket = job.client_socket;
+        ssize_t bytes = recv(worker_socket, buffer, sizeof(buffer) - 1, 0);
 
-      if (target_socket < 0) {
-        std::cout << "Invalid client socket for job status response"
-                  << std::endl;
-        continue;
-      }
-
-      std::vector<std::string> token = split(msg, '\n');
-
-      int value = send(target_socket, token[0].c_str(), token[0].length(), 0);
-
-      if (value <= 0) {
-        if (bytes == 0) {
-          std::cout << "Client closed connection" << std::endl;
-        } else {
-          std::cout << "Error sending message to Client" << std::endl;
+        if (bytes <= 0) {
+          if (bytes == 0) {
+            std::cout << "Worker closed connection" << std::endl;
+          } else {
+            std::cout << "Error receiving completion from worker" << std::endl;
+          }
+          break;
         }
-        continue;
-      }
 
-      if (msg.rfind("Error", 0) == 0) {
-        continue;
-      }
+        // Capture worker message with job id and status
+        std::string msg(buffer, static_cast<size_t>(bytes));
 
-      // Get completion message
+        std::cout << "Message from worker: " << msg << std::endl;
 
-      char buffer2[1000] = {0};
+        int target_socket = job.client_socket;
 
-      ssize_t bytes2 = recv(worker_socket, buffer2, sizeof(buffer2) - 1, 0);
-
-      if (bytes2 <= 0) {
-        if (bytes == 0) {
-          std::cout << "Worker closed connection" << std::endl;
-        } else {
-          std::cout << "Error receiving completion from worker" << std::endl;
+        if (target_socket < 0) {
+          std::cout << "Invalid client socket for job status response"
+                    << std::endl;
+          continue;
         }
-        break;
-      }
 
-      std::string msg2(buffer2, static_cast<size_t>(bytes2));
+        std::vector<std::string> token = split(msg, '\n');
 
-      std::cout << "Server: " << msg2 << std::endl;
-    } else if (checker == "METRICS_GET") {
+        int value = send(target_socket, token[0].c_str(), token[0].length(), 0);
 
-      if (!send_to_worker_metrics(worker_socket)) {
-        break;
-      }
-
-      checker = "";
-
-      char buffer[2000] = {0};
-
-      ssize_t bytes = recv(worker_socket, buffer, sizeof(buffer) - 1, 0);
-
-      if (bytes <= 0) {
-        if (bytes == 0) {
-          std::cout << "Worker closed connection" << std::endl;
-        } else {
-          std::cout << "Error receiving metrics from worker" << std::endl;
+        if (value <= 0) {
+          if (bytes == 0) {
+            std::cout << "Client closed connection" << std::endl;
+          } else {
+            std::cout << "Error sending message to Client" << std::endl;
+          }
+          continue;
         }
-        break;
-      }
 
-      std::string msg(buffer, static_cast<size_t>(bytes));
-
-      std::cout << "Message from worker: " << msg << std::endl;
-
-      int value = send(job.client_socket, msg.c_str(), msg.length(), 0);
-
-      if (value <= 0) {
-        if (bytes == 0) {
-          std::cout << "Client closed connection" << std::endl;
-        } else {
-          std::cout << "Error sending metrics to Client" << std::endl;
+        if (msg.rfind("Error", 0) == 0) {
+          continue;
         }
-        continue;
+
+        // Get completion message
+
+        char buffer2[1000] = {0};
+
+        ssize_t bytes2 = recv(worker_socket, buffer2, sizeof(buffer2) - 1, 0);
+
+        if (bytes2 <= 0) {
+          if (bytes == 0) {
+            std::cout << "Worker closed connection" << std::endl;
+          } else {
+            std::cout << "Error receiving completion from worker" << std::endl;
+          }
+          break;
+        }
+
+        std::string msg2(buffer2, static_cast<size_t>(bytes2));
+
+        std::cout << "Server: " << msg2 << std::endl;
+      } else if (job.checker == "METRICS_GET") {
+
+        if (!send_to_worker_metrics(worker_socket)) {
+          break;
+        }
+
+        job.checker = "";
+
+        char buffer[2000] = {0};
+
+        ssize_t bytes = recv(worker_socket, buffer, sizeof(buffer) - 1, 0);
+
+        if (bytes <= 0) {
+          if (bytes == 0) {
+            std::cout << "Worker closed connection" << std::endl;
+          } else {
+            std::cout << "Error receiving metrics from worker" << std::endl;
+          }
+          break;
+        }
+
+        std::string msg(buffer, static_cast<size_t>(bytes));
+
+        std::cout << "Message from worker: " << msg << std::endl;
+
+        std::vector<std::string> token = split(msg, '\n');
+
+        int value =
+            send(job.client_socket, token[0].c_str(), token[0].length(), 0);
+
+        if (value <= 0) {
+          if (bytes == 0) {
+            std::cout << "Client closed connection" << std::endl;
+          } else {
+            std::cout << "Error sending metrics to Client" << std::endl;
+          }
+          continue;
+        }
       }
     }
   }
-
   close(worker_socket);
 }
 
@@ -361,7 +371,7 @@ void handle_client(int clientSocket) {
       // Check to see if message was found from index 0 - 6
       if (parts[0] == "SUBMIT" && parts[1] == "TRANSCODE_VIDEO") {
 
-        checker = "SUBMIT";
+        job.checker = "SUBMIT";
 
         std::string keyword = "--payload=";
 
@@ -396,10 +406,10 @@ void handle_client(int clientSocket) {
           for (size_t pos :
                {payload_pos, priority_pos, retries_pos, deadline_pos}) {
             // Checks to see if position of the 4 instructions is bigger than
-            // currect position and position is smaller than next Position So if
-            // current = payload_pos then it checks the other 3 positions to see
-            // which is the smallest one after payload_pos Then returns it. If
-            // there is no next field it returns npos
+            // currect position and position is smaller than next Position So
+            // if current = payload_pos then it checks the other 3 positions
+            // to see which is the smallest one after payload_pos Then returns
+            // it. If there is no next field it returns npos
             if (pos > current && pos < next) {
               next = pos;
             }
@@ -422,9 +432,9 @@ void handle_client(int clientSocket) {
           }
 
           // If end (the end position of the instruction) is bigger than start
-          // (the start of the instruction position) AND Message at end - 1 (the
-          // last character of the instruction) is a space Then decrement end by
-          // 1 This is to remove any trailing spaces from the value
+          // (the start of the instruction position) AND Message at end - 1
+          // (the last character of the instruction) is a space Then decrement
+          // end by 1 This is to remove any trailing spaces from the value
           while (end > start && message[end - 1] == ' ') {
             --end;
           }
@@ -499,13 +509,20 @@ void handle_client(int clientSocket) {
       }
     } else if (message.substr(0, 10) == "JOB_STATUS") {
 
-      checker = "JOB_STATUS";
+      job.checker = "JOB_STATUS";
 
       job_id = std::stoi(parts[1]);
+
+      std::lock_guard<std::mutex> lock(queue_mutex);
+
+      job_queue.push(job);
     } else if (message.substr(0, 11) == "METRICS_GET") {
 
-      checker = "METRICS_GET";
+      job.checker = "METRICS_GET";
 
+      std::lock_guard<std::mutex> lock(queue_mutex);
+
+      job_queue.push(job);
     } else if (message.substr(0, 8) == "SHUTDOWN") {
 
       std::cout << "Shutdown command received from client. Closing connection."
