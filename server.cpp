@@ -12,10 +12,6 @@
 #include <thread>       // For multitasking/multithreading
 #include <unistd.h>     // Sleep function
 
-// Need to remove
-
-int job_id;
-
 // Split string into vector of strings
 std::vector<std::string> split(const std::string &s, char delimiter) {
   // Make vector of strings
@@ -62,7 +58,10 @@ struct Job {
   // So can access from send_to_worker function
   int client_socket;
 
+  // To check if job is submitted , status , or metrics
   std::string checker;
+
+  int id_checking;
 };
 
 int counter_id = 0;
@@ -214,7 +213,7 @@ void handle_worker(int worker_socket) {
 
       if (job.checker == "JOB_STATUS") {
 
-        int id = job_id;
+        int id = job.id_checking;
 
         if (!send_to_worker_status(worker_socket, id)) {
           break;
@@ -508,7 +507,7 @@ void handle_client(int clientSocket) {
 
       job.checker = "JOB_STATUS";
 
-      job_id = std::stoi(parts[1]);
+      job.id_checking = std::stoi(parts[1]);
 
       std::lock_guard<std::mutex> lock(queue_mutex);
 
