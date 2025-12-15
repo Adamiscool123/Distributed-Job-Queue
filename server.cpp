@@ -308,10 +308,7 @@ void handle_worker(int worker_socket) {
 
         std::cout << "Message from worker: " << msg << std::endl;
 
-        std::vector<std::string> token = split(msg, '\n');
-
-        int value =
-            send(job.client_socket, token[0].c_str(), token[0].length(), 0);
+        int value = send(job.client_socket, msg.c_str(), msg.length(), 0);
 
         if (value <= 0) {
           if (bytes == 0) {

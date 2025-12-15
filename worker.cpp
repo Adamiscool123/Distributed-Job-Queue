@@ -308,7 +308,7 @@ void connection(int port) {
         continue;
       }
 
-      std::string message = "Job " + std::to_string(job.id) + " completed\n";
+      std::string message = "\nJob " + std::to_string(job.id) + " completed";
 
       // Send message to server
       ssize_t final_message =
