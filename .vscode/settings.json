@@ -3,5 +3,10 @@
         "iostream": "cpp",
         "ostream": "cpp"
     },
+    "editor.quickSuggestions": {
+        "other": "off",
+        "comments": "off",
+        "strings": "off",
+    },
     "C_Cpp.errorSquiggles": "disabled"
 }

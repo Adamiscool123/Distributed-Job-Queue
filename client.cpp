@@ -1,4 +1,5 @@
 #include <arpa/inet.h>
+#include <cstdlib>
 #include <cstring>
 #include <iostream> // For I/O streams objects
 #include <mutex> // To ensure that only one thread can access a shared resource at a time
@@ -8,6 +9,17 @@
 #include <sys/socket.h> // For sockets
 #include <thread>       // For multitasking/multithreading
 #include <unistd.h>     // Sleep function
+
+void clearScreen() {
+// Check for Windows operating systems (32-bit or 64-bit)
+#if defined(_WIN32) || defined(_WIN64)
+  // If it is Windows, compile this line:
+  std::system("cls");
+#else
+  // Otherwise (for Linux, macOS, etc.), compile this line:
+  std::system("clear");
+#endif
+}
 
 void client(int port) {
   // Create client socket
@@ -22,11 +34,13 @@ void client(int port) {
   serverAddress.sin_family = AF_INET;
 
   // Specifiy port - 8080
-  // Htons: Host to Network Short - Takes in port number then converts from host byte order to network byte order
+  // Htons: Host to Network Short - Takes in port number then converts from host
+  // byte order to network byte order
   serverAddress.sin_port = htons(port);
 
   // Connect to localhost
-  // Inet_pton: Convert the IP address from text to binary form so that it can be used by the router
+  // Inet_pton: Convert the IP address from text to binary form so that it can
+  // be used by the router
   if (inet_pton(AF_INET, "127.0.0.1", &serverAddress.sin_addr) <= 0) {
     std::cout << "Invalid address" << std::endl;
     return;
@@ -71,16 +85,15 @@ void client(int port) {
 
     char buffer[1000] = {0};
 
-    // ssize_t can only hold positive or negative values whereas size_t only holds positive values
-    // Receive data from server
+    // ssize_t can only hold positive or negative values whereas size_t only
+    // holds positive values Receive data from server
     ssize_t bytes = recv(clientSocket, buffer, sizeof(buffer) - 1, 0);
 
     // Check for errors
-    if(bytes <=0){
-      if(bytes == 0){
+    if (bytes <= 0) {
+      if (bytes == 0) {
         std::cout << "Server closed connection" << std::endl;
-      }
-      else{
+      } else {
         std::cout << "Error receiving from server" << std::endl;
       }
       break;
@@ -90,7 +103,8 @@ void client(int port) {
     std::string completion_message(buffer, static_cast<size_t>(bytes));
 
     // Send message to client
-    std::cout << "Message from server: " << completion_message << std::endl;
+    std::cout << "Message from server: " << completion_message << std::endl
+              << std::endl;
   }
   close(clientSocket);
 }
