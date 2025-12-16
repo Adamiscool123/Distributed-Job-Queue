@@ -91,6 +91,8 @@ Open multiple terminals:
 Convert video file (payload) to readable format for computers:
 ```bash
 SUBMIT TRANSCODE_VIDEO --payload=video.mp4 --priority=2 --retries=3 --deadline=300
+
+SUBMIT TRAIN_MODEL --payload=video.mp4 --priority=2 --retries=3 --deadline=300
 ```
 
 #### Monitoring & Control Commands
