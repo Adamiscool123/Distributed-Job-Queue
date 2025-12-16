@@ -35,7 +35,6 @@ void receive_responses(int clientSocket) {
     std::cout << "Message from server: " << completion_message << std::endl
               << std::endl;
   }
-  close(clientSocket);
 }
 
 void client(int port) {
