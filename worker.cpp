@@ -103,7 +103,8 @@ bool receive_from_server(int socket, Job &job, std::vector<std::string> &parts,
 
     return true;
   } else if (message.find("JOB") != std::string::npos) {
-    if (message.find("TRANSCODE_VIDEO") != std::string::npos) {
+    if (message.find("TRANSCODE_VIDEO") != std::string::npos ||
+        message.find("TRAIN_MODEL") != std::string::npos) {
       // Create input string stream to parse the message
       std::istringstream iss(message);
       // Temporary variable to hold the tag
@@ -231,6 +232,46 @@ void connection(int port) {
         sleep(3);
 
         std::cout << "Step 5/5: Muxing final file..." << std::endl;
+
+        sleep(2);
+
+        job.status = "COMPLETED";
+
+        std::cout << "Job " << job.id << " completed: " << job.payload
+                  << std::endl;
+
+        // Send completion message back to server
+        std::string message =
+            "Job " + std::to_string(job.id) + " completed: " + job.payload;
+
+        // Send message to server
+        ssize_t sent = send(workerSocket, message.c_str(), message.length(), 0);
+
+        // Check for errors like if full length of message was sent
+        if (sent < 0 || static_cast<size_t>(sent) != message.length()) {
+          std::cout << "Failed to send completion to server" << std::endl;
+          break;
+        }
+      } else if (job.type == "TRAIN_MODEL") {
+
+        std::cout << "Training model with dataset: " << job.payload
+                  << std::endl;
+
+        job.status = "IN_PROGRESS";
+
+        std::cout << "Step 1/4: Preprocessing data..." << std::endl;
+
+        sleep(2);
+
+        std::cout << "Step 2/4: Initializing model parameters..." << std::endl;
+
+        sleep(1);
+
+        std::cout << "Step 3/4: Training model..." << std::endl;
+
+        sleep(4);
+
+        std::cout << "Step 4/4: Validating model..." << std::endl;
 
         sleep(2);
 

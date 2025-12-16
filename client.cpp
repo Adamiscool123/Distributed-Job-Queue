@@ -22,6 +22,7 @@ void receive_responses(int clientSocket) {
     if (bytes <= 0) {
       if (bytes == 0) {
         std::cout << "Server closed connection" << std::endl;
+        break;
       } else {
         std::cout << "Error receiving from server" << std::endl;
       }
@@ -34,6 +35,7 @@ void receive_responses(int clientSocket) {
     std::cout << "Message from server: " << completion_message << std::endl
               << std::endl;
   }
+  close(clientSocket);
 }
 
 void client(int port) {

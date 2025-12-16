@@ -365,7 +365,8 @@ void handle_client(int clientSocket) {
 
     if (message.substr(0, 6) == "SUBMIT") {
       // Check to see if message was found from index 0 - 6
-      if (parts[0] == "SUBMIT" && parts[1] == "TRANSCODE_VIDEO") {
+      if (parts[0] == "SUBMIT" &&
+          (parts[1] == "TRANSCODE_VIDEO" || parts[1] == "TRAIN_MODEL")) {
 
         job.checker = "SUBMIT";
 
@@ -460,7 +461,7 @@ void handle_client(int clientSocket) {
 
         job.client_socket = clientSocket;
 
-        job.type = "TRANSCODE_VIDEO";
+        job.type = parts[1];
 
         job.payload = payload_value;
 
