@@ -179,7 +179,7 @@ void connection(int port) {
   }
 
   // Send identity to server
-  const char *identity = "Worker";
+  const char *identity = "Worker\n";
 
   send(workerSocket, identity, strlen(identity), 0);
 
@@ -241,8 +241,8 @@ void connection(int port) {
                   << std::endl;
 
         // Send completion message back to server
-        std::string message =
-            "Job " + std::to_string(job.id) + " completed: " + job.payload;
+        std::string message = "Job " + std::to_string(job.id) +
+                              " completed: " + job.payload + "\n";
 
         // Send message to server
         ssize_t sent = send(workerSocket, message.c_str(), message.length(), 0);
@@ -281,8 +281,8 @@ void connection(int port) {
                   << std::endl;
 
         // Send completion message back to server
-        std::string message =
-            "Job " + std::to_string(job.id) + " completed: " + job.payload;
+        std::string message = "Job " + std::to_string(job.id) +
+                              " completed: " + job.payload + "\n";
 
         // Send message to server
         ssize_t sent = send(workerSocket, message.c_str(), message.length(), 0);
@@ -317,7 +317,7 @@ void connection(int port) {
 
           std::string status_message = "Job " +
                                        std::to_string(jobs_list[i].id) +
-                                       " status: " + jobs_list[i].status;
+                                       " status: " + jobs_list[i].status + "\n";
 
           // Send status message back to server
           ssize_t sent = send(workerSocket, status_message.c_str(),
@@ -336,7 +336,7 @@ void connection(int port) {
       if (!found) {
         std::cout << "Job ID: " << parts[1] << " not found" << std::endl;
 
-        std::string message = "Error Job " + parts[1] + " not found";
+        std::string message = "Error Job " + parts[1] + " not found\n";
 
         // Send not found message back to server
         ssize_t sent = send(workerSocket, message.c_str(), message.length(), 0);
@@ -349,7 +349,7 @@ void connection(int port) {
         continue;
       }
 
-      std::string message = "\nJob " + std::to_string(job.id) + " completed";
+      std::string message = "Job " + std::to_string(job.id) + " completed\n";
 
       // Send message to server
       ssize_t final_message =
@@ -390,12 +390,12 @@ void connection(int port) {
       }
 
       std::string metrics_message =
-          std::string("\nMetrics") + std::string("\nTotal Jobs: ") +
-          std::to_string(total_jobs) + std::string("\nCompleted: ") +
-          std::to_string(completed_jobs) + std::string("\nIn Progress: ") +
-          std::to_string(in_progress_jobs) + std::string("\nPending: ") +
-          std::to_string(pending_jobs) + std::string("\nFailed: ") +
-          std::to_string(failed_jobs);
+          std::string("Metrics: ") + std::string("Total Jobs: ") +
+          std::to_string(total_jobs) + std::string(", Completed: ") +
+          std::to_string(completed_jobs) + std::string(", In Progress: ") +
+          std::to_string(in_progress_jobs) + std::string(", Pending: ") +
+          std::to_string(pending_jobs) + std::string(", Failed: ") +
+          std::to_string(failed_jobs) + "\n";
 
       // Send metrics message back to server
       ssize_t sent = send(workerSocket, metrics_message.c_str(),

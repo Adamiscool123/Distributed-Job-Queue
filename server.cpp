@@ -3,6 +3,7 @@
 #include <cstring>
 #include <ctime>
 #include <iostream> // For I/O streams objects
+#include <map>
 #include <mutex> // To ensure that only one thread can access a shared resource at a time
 #include <netinet/in.h>
 #include <queue> // For push , pop , empty , and front
@@ -11,6 +12,39 @@
 #include <sys/socket.h> // For sockets
 #include <thread>       // For multitasking/multithreading
 #include <unistd.h>     // Sleep function
+
+std::map<int, std::string> socket_buffers;
+
+bool receive(int socket, std::string &out_msg) {
+  // 1. Check if we have leftover data for this socket
+  std::string &buffer = socket_buffers[socket];
+
+  while (true) {
+    // Check for \n
+    size_t newline_pos = buffer.find('\n');
+    if (newline_pos != std::string::npos) {
+      // Found it!
+      out_msg = buffer.substr(0, newline_pos);
+      // CRITICAL: Save the rest for later!
+      buffer = buffer.substr(newline_pos + 1);
+      return true;
+    }
+
+    // 2. Read new data
+    char temp[2000] = {0};
+    ssize_t bytes = recv(socket, temp, sizeof(temp) - 1, 0);
+
+    if (bytes <= 0) {
+      if (bytes == 0) {
+        std::cout << "Socket " << socket << " disconnected" << std::endl;
+      } else {
+        std::cout << "Error receiving data from socket " << socket << std::endl;
+      }
+      return false; // Disconnected
+    }
+    buffer += temp; // Append new data to whatever was left over
+  }
+}
 
 // Split string into vector of strings
 std::vector<std::string> split(const std::string &s, char delimiter) {
@@ -175,22 +209,11 @@ void handle_worker(int worker_socket) {
         break;
       }
 
-      char buffer[1000] = {0};
-
-      ssize_t bytes = recv(worker_socket, buffer, sizeof(buffer) - 1, 0);
-
-      if (bytes <= 0) {
-        if (bytes == 0) {
-          std::cout << "Worker closed connection" << std::endl;
-        } else {
-          std::cout << "Error receiving completion from worker" << std::endl;
-        }
+      std::string message;
+      if (!receive(worker_socket, message)) {
+        std::cout << "Worker disconnected or incomplete message" << std::endl;
         break;
       }
-
-      // Static cast to convert ssize_t to size_t so can only hold positive
-      // values
-      std::string message(buffer, static_cast<size_t>(bytes));
 
       if (message.find("Job " + std::to_string(job.id) + " completed:") == 0) {
         std::cout << "Message from worker: " << message << std::endl;
@@ -221,21 +244,11 @@ void handle_worker(int worker_socket) {
 
         job.checker = "";
 
-        char buffer[1000] = {0};
-
-        ssize_t bytes = recv(worker_socket, buffer, sizeof(buffer) - 1, 0);
-
-        if (bytes <= 0) {
-          if (bytes == 0) {
-            std::cout << "Worker closed connection" << std::endl;
-          } else {
-            std::cout << "Error receiving completion from worker" << std::endl;
-          }
+        std::string msg;
+        if (!receive(worker_socket, msg)) {
+          std::cout << "Worker disconnected" << std::endl;
           break;
         }
-
-        // Capture worker message with job id and status
-        std::string msg(buffer, static_cast<size_t>(bytes));
 
         std::cout << "Message from worker: " << msg << std::endl;
 
@@ -252,11 +265,7 @@ void handle_worker(int worker_socket) {
         int value = send(target_socket, token[0].c_str(), token[0].length(), 0);
 
         if (value <= 0) {
-          if (bytes == 0) {
-            std::cout << "Client closed connection" << std::endl;
-          } else {
-            std::cout << "Error sending message to Client" << std::endl;
-          }
+          std::cout << "Error sending metrics to Client" << std::endl;
           continue;
         }
 
@@ -266,20 +275,11 @@ void handle_worker(int worker_socket) {
 
         // Get completion message
 
-        char buffer2[1000] = {0};
-
-        ssize_t bytes2 = recv(worker_socket, buffer2, sizeof(buffer2) - 1, 0);
-
-        if (bytes2 <= 0) {
-          if (bytes == 0) {
-            std::cout << "Worker closed connection" << std::endl;
-          } else {
-            std::cout << "Error receiving completion from worker" << std::endl;
-          }
+        std::string msg2;
+        if (!receive(worker_socket, msg2)) {
+          std::cout << "Worker disconnected" << std::endl;
           break;
         }
-
-        std::string msg2(buffer2, static_cast<size_t>(bytes2));
 
         std::cout << "Server: " << msg2 << std::endl;
       } else if (job.checker == "METRICS_GET") {
@@ -290,31 +290,21 @@ void handle_worker(int worker_socket) {
 
         job.checker = "";
 
-        char buffer[2000] = {0};
-
-        ssize_t bytes = recv(worker_socket, buffer, sizeof(buffer) - 1, 0);
-
-        if (bytes <= 0) {
-          if (bytes == 0) {
-            std::cout << "Worker closed connection" << std::endl;
-          } else {
-            std::cout << "Error receiving metrics from worker" << std::endl;
-          }
+        std::string msg;
+        if (!receive(worker_socket, msg)) {
+          std::cout << "Worker disconnected" << std::endl;
           break;
         }
-
-        std::string msg(buffer, static_cast<size_t>(bytes));
 
         std::cout << "Message from worker: " << msg << std::endl;
 
         int value = send(job.client_socket, msg.c_str(), msg.length(), 0);
 
         if (value <= 0) {
-          if (bytes == 0) {
-            std::cout << "Client closed connection" << std::endl;
-          } else {
-            std::cout << "Error sending metrics to Client" << std::endl;
-          }
+          // The 'bytes' variable is not defined in this scope.
+          // Assuming it was intended to check 'value' or a similar receive
+          // result. For now, keeping the original logic's intent but using
+          std::cout << "Error sending message to Client" << std::endl;
           continue;
         }
       }
@@ -333,27 +323,19 @@ void handle_client(int clientSocket) {
 
     // Recieving data
 
-    // Create buffer for data
-    char buffer[10000] = {0};
-
-    // Receive data from clientSocket
-
-    // recv(socket, buffer, length of buffer, flag)
-    // Flag: 0 - for standard blocking read
-    // Make it a signed size tpye (ssize) so can see if there any any errors
-    ssize_t bytesRead = recv(clientSocket, buffer, sizeof(buffer), 0);
-
-    // Check for errors
-    if (bytesRead <= 0) {
+    // Receive
+    std::string message;
+    if (!receive(clientSocket, message)) {
       std::cout << "Client disconnected" << std::endl;
       break;
     }
 
-    // Convert buffer to string
-    std::string message(buffer, bytesRead);
-
     // Print out message/data received from client
     std::cout << "Message from client: " << message << std::endl;
+
+    if (message.empty()) {
+      continue;
+    }
 
     // Handle different client commands
 

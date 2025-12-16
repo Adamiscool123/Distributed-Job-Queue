@@ -74,7 +74,7 @@ void client(int port) {
   }
 
   // Send data
-  const char *identity = "Client";
+  const char *identity = "Client\n";
 
   send(clientSocket, identity, strlen(identity), 0);
 
@@ -94,11 +94,10 @@ void client(int port) {
 
     std::getline(std::cin, message);
 
-    // Convert message back to char in order to send message to server
-    const char *result_message = message.c_str();
+    message += "\n"; // Append newline delimiter
 
     // Send message: clientsocket, message, length of message.
-    int value = send(clientSocket, result_message, strlen(result_message), 0);
+    int value = send(clientSocket, message.c_str(), message.length(), 0);
 
     if (value < 0) {
       std::cout << "Send failed" << std::endl;
