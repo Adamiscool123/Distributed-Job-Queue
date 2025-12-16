@@ -519,6 +519,14 @@ void handle_client(int clientSocket) {
       std::lock_guard<std::mutex> lock(queue_mutex);
 
       job_queue.push(job);
+    } else if (message.substr(0, 10) == "JOB_CANCEL") {
+      job.checker = "JOB_CANCEL";
+
+      job.id_checking = std::stoi(parts[1]);
+
+      std::lock_guard<std::mutex> lock(queue_mutex);
+
+      job_queue.push(job);
     } else if (message.substr(0, 8) == "SHUTDOWN") {
 
       std::cout << "Shutdown command received from client. Closing connection."

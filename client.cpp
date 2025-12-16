@@ -10,15 +10,30 @@
 #include <thread>       // For multitasking/multithreading
 #include <unistd.h>     // Sleep function
 
-void clearScreen() {
-// Check for Windows operating systems (32-bit or 64-bit)
-#if defined(_WIN32) || defined(_WIN64)
-  // If it is Windows, compile this line:
-  std::system("cls");
-#else
-  // Otherwise (for Linux, macOS, etc.), compile this line:
-  std::system("clear");
-#endif
+void receive_responses(int clientSocket) {
+  while (true) {
+    char buffer[1000] = {0};
+
+    // ssize_t can only hold positive or negative values whereas size_t only
+    // holds positive values Receive data from server
+    ssize_t bytes = recv(clientSocket, buffer, sizeof(buffer) - 1, 0);
+
+    // Check for errors
+    if (bytes <= 0) {
+      if (bytes == 0) {
+        std::cout << "Server closed connection" << std::endl;
+      } else {
+        std::cout << "Error receiving from server" << std::endl;
+      }
+    }
+
+    // Turn to string
+    std::string completion_message(buffer, static_cast<size_t>(bytes));
+
+    // Send message to client
+    std::cout << "Message from server: " << completion_message << std::endl
+              << std::endl;
+  }
 }
 
 void client(int port) {
@@ -62,6 +77,12 @@ void client(int port) {
 
   send(clientSocket, identity, strlen(identity), 0);
 
+  std::thread reciever(receive_responses, clientSocket);
+
+  // So can run in the background
+
+  reciever.detach();
+
   while (true) {
 
     // Message:
@@ -82,29 +103,6 @@ void client(int port) {
       std::cout << "Send failed" << std::endl;
       break;
     }
-
-    char buffer[1000] = {0};
-
-    // ssize_t can only hold positive or negative values whereas size_t only
-    // holds positive values Receive data from server
-    ssize_t bytes = recv(clientSocket, buffer, sizeof(buffer) - 1, 0);
-
-    // Check for errors
-    if (bytes <= 0) {
-      if (bytes == 0) {
-        std::cout << "Server closed connection" << std::endl;
-      } else {
-        std::cout << "Error receiving from server" << std::endl;
-      }
-      break;
-    }
-
-    // Turn to string
-    std::string completion_message(buffer, static_cast<size_t>(bytes));
-
-    // Send message to client
-    std::cout << "Message from server: " << completion_message << std::endl
-              << std::endl;
   }
   close(clientSocket);
 }
